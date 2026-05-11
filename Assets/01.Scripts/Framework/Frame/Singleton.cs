@@ -1,9 +1,15 @@
 using UnityEngine;
 
-[DefaultExecutionOrder(-100)]
-public abstract class Singleton<T> : MonoBehaviour where T : MonoBehaviour
+public interface ISingletonBootstrap
 {
-    [SerializeField] private bool _isDontDestroyOnLoad = true;
+    bool IsBootstrapped { get; }
+    void BootstrapIfNeeded();
+}
+
+[DefaultExecutionOrder(-100)]
+public abstract class Singleton<T> : MonoBehaviour, ISingletonBootstrap where T : MonoBehaviour
+{
+    [SerializeField] protected bool _isDontDestroyOnLoad = true;
 
     private static T _instance;
 
