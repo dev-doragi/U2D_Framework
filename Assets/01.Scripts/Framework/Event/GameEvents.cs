@@ -1,83 +1,91 @@
 using UnityEngine;
 
-/// <summary>
-/// 씬/상태/입력/오디오 흐름에서 사용하는 공통 이벤트 정의입니다.
-/// </summary>
-public struct StageLoadedEvent
-{
-    public int StageIndex;
-}
-
-public struct WaveStartedEvent
-{
-    public int StageIndex;
-    public int WaveIndex;
-}
-
-public struct WaveEndedEvent
-{
-    public int StageIndex;
-    public int WaveIndex;
-    public bool IsWin;
-    public bool IsFinalWave;
-}
-
-public struct StageClearedEvent
-{
-    public int StageIndex;
-    public bool IsFinalStage;
-}
-
-public struct StageFailedEvent
-{
-    public int StageIndex;
-}
-
 public struct GameStateChangedEvent
 {
+    public GameState PreviousState;
     public GameState NewState;
 }
 
 public struct InGameStateChangedEvent
 {
+    public InGameState PreviousState;
     public InGameState NewState;
 }
 
-public struct PlaySFXEvent
+public struct PauseRequestedEvent
+{
+    public bool Pause;
+}
+
+public struct SceneLoadRequestedEvent
+{
+    public string SceneName;
+}
+
+public struct SceneLoadedEvent
+{
+    public string SceneName;
+}
+
+public struct InputDeviceChangedEvent
+{
+    public string DeviceName;
+}
+
+public struct CameraShakeEvent
+{
+    public ShakeIntensity Intensity;
+}
+
+public struct PlaySoundEvent
 {
     public AudioClip Clip;
     public float Volume;
+    public bool IsBgm;
 }
 
-public struct ClickEvent
+public struct StopSoundEvent
 {
-    public bool IsStarted;
+    public bool StopBgm;
 }
 
-public struct RightClickEvent
+public struct TimeScaleChangedEvent
 {
-    public bool IsStarted;
+    public float NewTimeScale;
 }
 
-public struct RotateEvent { }
-
-public struct ScrollEvent
+public struct HitStopRequestedEvent
 {
-    public float Delta;
+    public float Duration;
+    public float TimeScale;
 }
 
-public struct PausePressedEvent { }
-
-public struct WaveWaitInterruptedEvent { }
-
-public struct WaveWaitTimerTickEvent
+public struct SlowMotionRequestedEvent
 {
-    public float RemainingTime;
+    public float Duration;
+    public float TimeScale;
 }
 
-public struct TutorialCompletedEvent
+public struct MoveInputEvent
 {
-    public int RewardStageIndex;
+    public Vector2 Value;
 }
 
-public struct CameraManipulationEvent { }
+public struct LookInputEvent
+{
+    public Vector2 Value;
+}
+
+public struct SubmitInputEvent { }
+public struct CancelInputEvent { }
+public struct PauseInputEvent { }
+
+public struct PrimaryActionInputEvent
+{
+    public bool IsPressed;
+}
+
+public struct SecondaryActionInputEvent
+{
+    public bool IsPressed;
+}

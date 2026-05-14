@@ -1,101 +1,72 @@
-﻿using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using System.Collections;
 
-/// <summary>
-/// 공통 씬 전환을 담당하는 프레임워크 매니저입니다.
-/// </summary>
-/// <remarks>
-/// 프로젝트 전용 컨텍스트 없이 씬 이름 기반으로만 동작합니다.
-/// 씬 이동 전 공통 상태(TimeScale, 입력 차단)를 초기화합니다.
-/// </remarks>
-
-[DefaultExecutionOrder(-180)]
+[DefaultExecutionOrder(-790)]
 public class SceneLoader : Singleton<SceneLoader>
 {
-    [Header("Scene Settings")]
-    [SerializeField] private string _lobbySceneName = "01.LobbyScene";
-    [SerializeField] private string _tutorialSceneName = "02.TutorialScene";
-    [SerializeField] private string _stageSelectSceneName = "03.StageSelectScene";
-    [SerializeField] private string _inGameSceneName = "04.InGameScene";
+    private bool _isLoading;
 
-    private void ResetGlobalState()
+    protected override void OnBootstrap()
     {
-        Time.timeScale = 1f;
+        EventBus.Instance.Subscribe<SceneLoadRequestedEvent>(OnSceneLoadRequested);
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
 
-        if (InputReader.Instance != null)
+    private void OnDisable()
+    {
+        EventBus.Instance.Unsubscribe<SceneLoadRequestedEvent>(OnSceneLoadRequested);
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    public bool IsLoading => _isLoading;
+
+    public void RequestLoad(string sceneName)
+    {
+        EventBus.Instance.Publish(new SceneLoadRequestedEvent { SceneName = sceneName });
+    }
+
+    private void OnSceneLoadRequested(SceneLoadRequestedEvent evt)
+    {
+        if (string.IsNullOrWhiteSpace(evt.SceneName))
         {
-            InputReader.Instance.SetInputBlocked(false);
+            Debug.LogError("[SceneLoader] Scene name is null or empty.", this);
+            return;
+        }
+
+        if (_isLoading)
+        {
+            Debug.LogError($"[SceneLoader] Already loading another scene. Request ignored: {evt.SceneName}", this);
+            return;
+        }
+
+        StartCoroutine(LoadSceneAsyncRoutine(evt.SceneName));
+    }
+
+    private IEnumerator LoadSceneAsyncRoutine(string sceneName)
+    {
+        _isLoading = true;
+        TimeManager.Instance?.ResetTime();
+        GameManager.Instance?.ChangeState(GameState.Loading);
+
+        AsyncOperation op = SceneManager.LoadSceneAsync(sceneName);
+        if (op == null)
+        {
+            Debug.LogError($"[SceneLoader] Failed to start loading scene: {sceneName}", this);
+            _isLoading = false;
+            yield break;
+        }
+
+        while (!op.isDone)
+        {
+            yield return null;
         }
     }
 
-    private void PreserveBGMForNextSceneLoad()
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        if (SoundManager.Instance != null)
-        {
-            SoundManager.Instance.RequestSkipNextSceneLoadedBGMStop();
-        }
-    }
-
-    public void GoToLobby()
-    {
-        ResetGlobalState();
-
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.ChangeState(GameState.Ready);
-        }
-        SceneManager.LoadScene(_lobbySceneName);
-    }
-
-    public void GoToStageSelect()
-    {
-        ResetGlobalState();
-        PreserveBGMForNextSceneLoad();
-        SceneManager.LoadScene(_stageSelectSceneName);
-    }
-
-    public void EnterTutorial()
-    {
-        ResetGlobalState();
-        PreserveBGMForNextSceneLoad();
-        SceneManager.LoadScene(_tutorialSceneName);
-    }
-
-    public void EnterInGameFromTutorial(int stageIndex)
-    {
-        ResetGlobalState();
-        PreserveBGMForNextSceneLoad();
-        SceneManager.LoadScene(_inGameSceneName);
-    }
-
-    public void EnterInGame(int stageIndex)
-    {
-        ResetGlobalState();
-        SceneManager.LoadScene(_inGameSceneName);
-    }
-
-    public void ReloadCurrentScene()
-    {
-        ResetGlobalState();
-
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.ChangeState(GameState.Playing);
-        }
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.HideAllPanels();
-        }
-
-        string currentSceneName = SceneManager.GetActiveScene().name;
-
-        SceneManager.LoadScene(currentSceneName);
-    }
-
-    public void Quit()
-    {
-        Application.Quit();
+        TimeManager.Instance?.ResetTime();
+        _isLoading = false;
+        EventBus.Instance.Publish(new SceneLoadedEvent { SceneName = scene.name });
     }
 }

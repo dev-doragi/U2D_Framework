@@ -6,21 +6,25 @@ public interface ISingletonBootstrap
     void BootstrapIfNeeded();
 }
 
-[DefaultExecutionOrder(-100)]
+[DefaultExecutionOrder(-900)]
 public abstract class Singleton<T> : MonoBehaviour, ISingletonBootstrap where T : MonoBehaviour
 {
     [SerializeField] protected bool _isDontDestroyOnLoad = true;
 
     private static T _instance;
+    private static bool _isQuitting;
+
+    public static bool IsExisted => _instance != null && !_isQuitting;
 
     public static T Instance
     {
         get
         {
-            if (_instance == null)
+            if (_instance == null && !_isQuitting)
             {
-                Debug.LogWarning($"[{typeof(T).Name}] 인스턴스가 씬에 존재하지 않습니다.");
+                Debug.LogError($"[{typeof(T).Name}] Instance is not initialized.");
             }
+
             return _instance;
         }
     }
@@ -29,8 +33,11 @@ public abstract class Singleton<T> : MonoBehaviour, ISingletonBootstrap where T 
 
     protected virtual void Awake()
     {
+        _isQuitting = false;
+
         if (_instance != null && _instance != this as T)
         {
+            Debug.LogWarning($"[{typeof(T).Name}] Duplicate instance detected and destroyed: {name}", this);
             Destroy(gameObject);
             return;
         }
@@ -38,27 +45,34 @@ public abstract class Singleton<T> : MonoBehaviour, ISingletonBootstrap where T 
         _instance = this as T;
 
         if (_isDontDestroyOnLoad)
+        {
             DontDestroyOnLoad(gameObject);
+        }
     }
 
-    /// <summary>
-    /// Bootstrapper에 의해 호출되는 명시적 초기화 메서드입니다.
-    /// </summary>
     public void BootstrapIfNeeded()
     {
-        if (IsBootstrapped) return;
+        if (IsBootstrapped)
+        {
+            return;
+        }
 
         OnBootstrap();
         IsBootstrapped = true;
     }
 
-    /// <summary>
-    /// 실제 초기화 로직(이벤트 구독, 데이터 로드 등)을 구현합니다.
-    /// </summary>
     protected virtual void OnBootstrap() { }
 
     protected virtual void OnDestroy()
     {
-        if (_instance == this) _instance = null;
+        if (_instance == this)
+        {
+            _instance = null;
+        }
+    }
+
+    protected virtual void OnApplicationQuit()
+    {
+        _isQuitting = true;
     }
 }

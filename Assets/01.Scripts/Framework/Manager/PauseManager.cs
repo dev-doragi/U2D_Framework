@@ -1,64 +1,46 @@
 using UnityEngine;
 
-/// <summary>
-/// 게임 내 일시정지 요청을 수신하고 상태를 토글하는 매니저입니다.
-/// </summary>
-/// <remarks>
-/// [주요 역할]
-/// - 키보드 입력(Input System) 또는 UI 버튼에 의한 일시정지 트리거 처리
-/// - GameManager에 상태 변경(Paused <-> Playing) 요청
-///
-/// [이벤트 흐름]
-/// - Subscribe: PausePressedEvent, GameStateChangedEvent
-/// </remarks>
-[DefaultExecutionOrder(-140)]
+[DefaultExecutionOrder(-770)]
 public class PauseManager : Singleton<PauseManager>
 {
-    private bool _isPaused = false;
-
-    private void OnEnable()
+    protected override void OnBootstrap()
     {
-        if (EventBus.Instance != null)
-        {
-            EventBus.Instance.Subscribe<PausePressedEvent>(OnPausePressed);
-            EventBus.Instance.Subscribe<GameStateChangedEvent>(OnGameStateChanged);
-        }
+        EventBus.Instance.Subscribe<PauseInputEvent>(OnPauseInput);
+        EventBus.Instance.Subscribe<PauseRequestedEvent>(OnPauseRequested);
     }
 
     private void OnDisable()
     {
-        if (EventBus.Instance != null)
+        EventBus.Instance.Unsubscribe<PauseInputEvent>(OnPauseInput);
+        EventBus.Instance.Unsubscribe<PauseRequestedEvent>(OnPauseRequested);
+    }
+
+    private void OnPauseInput(PauseInputEvent evt)
+    {
+        if (GameManager.Instance == null)
         {
-            EventBus.Instance.Unsubscribe<PausePressedEvent>(OnPausePressed);
-            EventBus.Instance.Unsubscribe<GameStateChangedEvent>(OnGameStateChanged);
+            Debug.LogError("[PauseManager] GameManager instance is missing.", this);
+            return;
+        }
+
+        if (GameManager.Instance.CurrentState == GameState.Playing)
+        {
+            EventBus.Instance.Publish(new PauseRequestedEvent { Pause = true });
+        }
+        else if (GameManager.Instance.CurrentState == GameState.Paused)
+        {
+            EventBus.Instance.Publish(new PauseRequestedEvent { Pause = false });
         }
     }
 
-    private void OnPausePressed(PausePressedEvent evt)
+    private void OnPauseRequested(PauseRequestedEvent evt)
     {
-        GameState currentState = GameManager.Instance.CurrentState;
-
-        if (currentState == GameState.Playing)
+        if (GameManager.Instance == null)
         {
-            TogglePause(true);
+            Debug.LogError("[PauseManager] GameManager instance is missing.", this);
+            return;
         }
-        else if (currentState == GameState.Paused)
-        {
-            TogglePause(false);
-        }
-    }
 
-    private void OnGameStateChanged(GameStateChangedEvent evt)
-    {
-        if (evt.NewState != GameState.Paused)
-        {
-            _isPaused = false;
-        }
-    }
-
-    public void TogglePause(bool pause)
-    {
-        _isPaused = pause;
-        GameManager.Instance.ChangeState(_isPaused ? GameState.Paused : GameState.Playing);
+        GameManager.Instance.ChangeState(evt.Pause ? GameState.Paused : GameState.Playing);
     }
 }

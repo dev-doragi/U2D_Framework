@@ -1,8 +1,10 @@
 public enum GameState
 {
-    Ready,
+    None,
+    Booting,
+    MainMenu,
+    Loading,
     Playing,
     Paused,
-    GameOver,
-    GameClear
+    GameOver
 }

@@ -2,133 +2,128 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Pool;
 
-[DefaultExecutionOrder(-97)]
-/// <summary>
-/// 이름 기반 풀을 관리하는 공통 오브젝트 풀 매니저입니다.
-/// </summary>
+[DefaultExecutionOrder(-740)]
 public class PoolManager : Singleton<PoolManager>
 {
-    private readonly Dictionary<string, IObjectPool<GameObject>> _pools = new();
-
-    [Header("Pool Setup")]
     [SerializeField] private Transform _poolRoot;
-    [SerializeField] private RectTransform _uiPoolRoot;
+    [SerializeField] private bool _clearPoolsOnSceneLoaded;
 
-    [Header("Global Pool Setup")]
-    [Tooltip("프로젝트 전역에서 재사용할 프리팹 풀 목록")]
-    [SerializeField] private List<PoolSetupData> _globalPools = new List<PoolSetupData>();
+    private readonly Dictionary<string, IObjectPool<GameObject>> _pools = new();
+    private readonly Dictionary<string, GameObject> _prefabs = new();
 
     protected override void OnBootstrap()
     {
         if (_poolRoot == null)
         {
-            GameObject rootObj = new GameObject("PoolRoot");
-            DontDestroyOnLoad(rootObj);
-            _poolRoot = rootObj.transform;
+            GameObject root = new GameObject("PoolRoot");
+            DontDestroyOnLoad(root);
+            _poolRoot = root.transform;
         }
 
-        if (_uiPoolRoot == null)
-        {
-        }
-
-        foreach (var setup in _globalPools)
-        {
-            if (setup.Prefab != null)
-            {
-                CreatePool(setup.Prefab, setup.InitialSize, setup.MaxSize);
-            }
-        }
+        EventBus.Instance.Subscribe<SceneLoadedEvent>(OnSceneLoaded);
     }
 
-    public void CreatePool(GameObject prefab, int initialSize, int maxSize = 100)
+    private void OnDisable()
     {
-        if (prefab == null)
+        EventBus.Instance.Unsubscribe<SceneLoadedEvent>(OnSceneLoaded);
+    }
+
+    public void RegisterPool(string key, GameObject prefab, int defaultCapacity = 8, int maxSize = 64)
+    {
+        if (string.IsNullOrWhiteSpace(key) || prefab == null)
         {
-            Debug.LogError("[PoolManager] 생성할 프리팹이 null입니다.");
+            Debug.LogError("[PoolManager] Invalid pool registration request.", this);
             return;
         }
 
-        string key = prefab.name;
-        if (_pools.ContainsKey(key)) return;
-
-        bool isUI = prefab.GetComponent<RectTransform>() != null;
-
-        if (isUI && _uiPoolRoot == null)
+        if (_pools.ContainsKey(key))
         {
-            Debug.LogWarning($"[PoolManager] '{prefab.name}'은 UI 프리팹이지만 _uiPoolRoot가 설정되지 않았습니다. 풀링을 스킵합니다.");
             return;
         }
 
-        Transform targetRoot = isUI ? _uiPoolRoot : _poolRoot;
-
-        IObjectPool<GameObject> pool = new ObjectPool<GameObject>(
+        _prefabs[key] = prefab;
+        _pools[key] = new ObjectPool<GameObject>(
             createFunc: () =>
             {
-                GameObject obj = Instantiate(prefab, targetRoot);
-                obj.name = prefab.name;
-                obj.SetActive(false);
-                return obj;
+                GameObject instance = Instantiate(prefab, _poolRoot);
+                instance.name = prefab.name;
+                instance.SetActive(false);
+                return instance;
             },
-            actionOnGet: null,
-            actionOnRelease: obj => obj.SetActive(false),
-            actionOnDestroy: obj => Destroy(obj),
+            actionOnGet: instance => instance.SetActive(true),
+            actionOnRelease: instance =>
+            {
+                instance.SetActive(false);
+                instance.transform.SetParent(_poolRoot);
+            },
+            actionOnDestroy: Destroy,
             collectionCheck: false,
-            defaultCapacity: initialSize,
-            maxSize: maxSize
-        );
-
-        _pools.Add(key, pool);
-
-        if (initialSize > 0)
-        {
-            GameObject[] prewarmObjects = new GameObject[initialSize];
-            for (int i = 0; i < initialSize; i++) prewarmObjects[i] = pool.Get();
-            for (int i = 0; i < initialSize; i++) pool.Release(prewarmObjects[i]);
-        }
+            defaultCapacity: Mathf.Max(1, defaultCapacity),
+            maxSize: Mathf.Max(defaultCapacity, maxSize));
     }
 
-    public GameObject Spawn(string prefabName, Vector3 position, Quaternion rotation)
+    public GameObject Spawn(string key, Vector3 position, Quaternion rotation)
     {
-        if (!_pools.TryGetValue(prefabName, out var pool))
+        if (!_pools.TryGetValue(key, out IObjectPool<GameObject> pool))
         {
-            Debug.LogError($"[PoolManager] '{prefabName}'에 해당하는 풀이 존재하지 않습니다. 먼저 CreatePool을 호출하세요.");
+            Debug.LogError($"[PoolManager] Pool key not found: {key}", this);
             return null;
         }
 
-        GameObject obj = pool.Get();
-        if (obj == null)
-        {
-            Debug.LogWarning($"[PoolManager] '{prefabName}' 풀에서 파괴된 오브젝트를 반환받았습니다. 재시도합니다.");
-            obj = pool.Get();
-            if (obj == null) return null;
-        }
-
-        obj.transform.SetPositionAndRotation(position, rotation);
-        obj.SetActive(true);
-        return obj;
+        GameObject instance = pool.Get();
+        instance.transform.SetPositionAndRotation(position, rotation);
+        return instance;
     }
 
-    public void Despawn(GameObject obj)
+    public void Despawn(string key, GameObject instance)
     {
-        string key = obj.name;
-        if (!_pools.TryGetValue(key, out var pool))
+        if (instance == null)
         {
-            Destroy(obj);
             return;
         }
 
-        pool.Release(obj);
+        if (!_pools.TryGetValue(key, out IObjectPool<GameObject> pool))
+        {
+            Debug.LogError($"[PoolManager] Pool key not found for despawn: {key}", this);
+            return;
+        }
 
-        bool isUI = obj.GetComponent<RectTransform>() != null;
-        obj.transform.SetParent(isUI ? _uiPoolRoot : _poolRoot);
+        pool.Release(instance);
+    }
+
+    public void Despawn(GameObject instance)
+    {
+        if (instance == null)
+        {
+            return;
+        }
+
+        string key = instance.name.Replace("(Clone)", string.Empty).Trim();
+        if (!_pools.TryGetValue(key, out IObjectPool<GameObject> pool))
+        {
+            Debug.LogError($"[PoolManager] Pool key not found for despawn: {key}", this);
+            return;
+        }
+
+        pool.Release(instance);
+    }
+
+    private void OnSceneLoaded(SceneLoadedEvent evt)
+    {
+        if (_clearPoolsOnSceneLoaded)
+        {
+            ClearAllPools();
+        }
     }
 
     public void ClearAllPools()
     {
-        foreach (var pool in _pools.Values)
+        foreach (IObjectPool<GameObject> pool in _pools.Values)
         {
             pool.Clear();
         }
+
         _pools.Clear();
+        _prefabs.Clear();
     }
 }

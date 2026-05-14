@@ -1,9 +1,10 @@
 public enum InGameState
 {
     None,
-    Prepare,
-    WavePlaying,
-    WaveEnded,
-    StageCleared,
-    StageFailed
+    Initializing,
+    Ready,
+    Running,
+    Suspended,
+    Completed,
+    Failed
 }
